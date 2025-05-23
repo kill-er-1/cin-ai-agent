@@ -1,13 +1,19 @@
 package com.cin.cinaiagent.app;
 
+import com.cin.cinaiagent.advisor.MyAdvisor;
+import com.cin.cinaiagent.advisor.ReReadingAdvisor;
+import com.cin.cinaiagent.chatmemory.FileBasedChatMemory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.memory.InMemoryChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.stereotype.Component;
+
+import java.util.List;
 
 import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_CONVERSATION_ID_KEY;
 import static org.springframework.ai.chat.client.advisor.AbstractChatMemoryAdvisor.CHAT_MEMORY_RETRIEVE_SIZE_KEY;
@@ -33,16 +39,22 @@ public class LoveApp {
      * @param dashscopeChatModel
      */
     public LoveApp(ChatModel  dashscopeChatModel) {
+        //获取工作目录，并加上chat-memory
+        String fileDir = System.getProperty("user.dir")+"/chat-memory";
+        ChatMemory chatMemory = new FileBasedChatMemory(fileDir);
         //springbootstarter 自动配置了这个chatmodel
         //内存保留对话
-        ChatMemory chatMemory = new InMemoryChatMemory();
+//        ChatMemory chatMemory = new InMemoryChatMemory();
 
         //build chatclient时需要指定chatmodel 和 系统提示词 还有 拦截器
         //builder()是个静态方法
         chatClient = ChatClient.builder(dashscopeChatModel)
                   .defaultSystem(SYSTEM_PROMPT)
                 .defaultAdvisors(
-                        new MessageChatMemoryAdvisor(chatMemory)
+                        new MessageChatMemoryAdvisor(chatMemory),
+                        //日志拦截器
+                        new MyAdvisor()
+//                        new ReReadingAdvisor()
                 ).build();
     }
 
@@ -63,5 +75,27 @@ public class LoveApp {
         String content = response.getResult().getOutput().getText();
         log.info(content);
         return content;
+    }
+    record LoveReport (String title, List<String> suggestions) {
+
+    }
+
+    /**
+     * 恋爱报告
+     * @param message
+     * @param chatId
+     * @return
+     */
+    public LoveReport doChatWithLoveReport(String message,String chatId) {
+        LoveReport loveReport = chatClient
+                .prompt()
+                .system("每次对话后的结果都要生成恋爱报告，标题为{用户名}的恋爱报告，内容为建议列表")
+                .user(message)
+                .advisors(spec -> spec.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId)
+                        .param(CHAT_MEMORY_RETRIEVE_SIZE_KEY, 10))
+                .call()
+                .entity(LoveReport.class);
+        log.info("lovereport:{}",loveReport);
+        return loveReport;
     }
 }
